@@ -145,9 +145,6 @@ export class ChatController extends HTMLElement {
             this.selectedDocuments.forEach(document => {activities.push(document.name)})
         }
 
-        this.messageInput.reset(true);
-        this.messageInput.collapse();
-
         this.dataset.state = STATE.CONVERSATION;
 
         emitEvent(Events.START_STREAMING);
@@ -181,25 +178,10 @@ export class ChatController extends HTMLElement {
             socket: new WebSocket(this.endPoint),
             messageId: "",
             title: "",
+            messageAccepted: false,
         }
 
         const webSocket = this.currentStream.socket;
-
-        webSocket.onopen = () => {
-            webSocket.send(
-                JSON.stringify({
-                    message: text,
-                    sessionId: this.dataset.sessionId,
-                    selectedFiles: documents,
-                    activities: activities,
-                    llm,
-                    selectedTool: toolId,
-                }),
-            );
-            this.dataset.status = STATUS.STREAMING;
-            emitEvent(Events.CHAT_RESPONSE_START);
-            emitEvent(Events.SCROLL_TO_BOTTOM, {source:this, force:true});
-        };
 
         webSocket.onmessage = (evt) => {
             let response;
@@ -213,8 +195,35 @@ export class ChatController extends HTMLElement {
             const data = response.data;
 
             switch (response.type) {
+                case "chat_ready":
+                    webSocket.send(
+                        JSON.stringify({
+                            message: text,
+                            sessionId: this.dataset.sessionId,
+                            selectedFiles: documents,
+                            activities: activities,
+                            llm,
+                            selectedTool: toolId,
+                        }),
+                    );
+                    this.dataset.status = STATUS.STREAMING;
+                    emitEvent(Events.CHAT_RESPONSE_START);
+                    emitEvent(Events.SCROLL_TO_BOTTOM, { source: this, force: true });
+                    break;
+
                 case "message_created":
                     this.handleMessageCreated(data);
+
+                    if (
+                        data.chat_message_role === "user" &&
+                        this.currentStream &&
+                        !this.currentStream?.messageAccepted
+                    ) {
+                        this.currentStream.messageAccepted = true;
+                        this.messageInput.reset(true);
+                        this.messageInput.collapse()
+                    }
+
                     break;
 
                 case "message_update":
